@@ -1,3 +1,4 @@
+from datetime import datetime
 from random import randint, choices
 from string import digits
 import pandas as pd
@@ -5,7 +6,6 @@ import re  # 정규 표현식 라이브러리
 import pint  # 화폐단위 라이브러리
 from faker import Faker  # 가짜 이름 라이브러리
 from tabulate import tabulate  # 데이터프레임 가독성 향상 라이브러리
-
 
 # 화폐단위 정의
 currency_registry = pint.UnitRegistry()
@@ -16,23 +16,18 @@ USD = currency_registry.USD
 KRW = currency_registry.KRW
 CNY = currency_registry.CNY
 # 임의로 추가 가능
-#
 
 
 class BankAccount:
     def __init__(self, name, unit: pint.Unit):
         self.__account_number = ''.join(choices(digits, k=13))
         self.__balance = 0 * unit  # 잔액 (화폐단위 포함)
-        self.name = name
+        self.__name = name
 
     def __str__(self):
-        return '이름: {:s}\n' \
-               '계좌번호: {:s}-**-***{:s}\n' \
-               '잔액: {:,}'.format(
-                self.name,
-                self.__account_number[:-9],
-                self.__account_number[-4:],
-                self.__balance)
+        return f'이름: {self.__name}\n' \
+               f'계좌번호: {self.__account_number[:-9]}-**-***{self.__account_number[-4:]}\n' \
+               f'잔액: {self.__balance:,}'
 
     def get_balance(self):
         return self.__balance
@@ -48,24 +43,30 @@ class BankAccount:
 
 
 class Card:
-    def __init__(self, account):
+    def __init__(self, account: BankAccount):
         self.__card_number = ''.join(choices(digits, k=16))
-        self.account: BankAccount = account  # 카드 소유주
+        self.account = account  # 카드 소유주
 
     def __str__(self):
-        return '카드번호: {}\n' \
-               '↓ 소유주 정보 ↓\n' \
-               '{}'.format(
-                '-'.join([self.__card_number[:4], '****', '****', self.__card_number[-4:]]),
-                self.account)
+        return f'카드번호: {self.__card_number[:4]}-****-****-{self.__card_number[-4:]}\n' \
+               f'↓ 소유주 정보 ↓\n' \
+               f'{self.account}'
 
-    def pay(self, amount):
+    def get_card_number(self):
+        return f'{self.__card_number[:4]}-****-****-{self.__card_number[-4:]}'
+
+    def get_balance(self):
+        return self.account.get_balance()
+
+    def pay(self, amount, to: BankAccount = None):
         self.account.withdraw(amount)
+        if to is not None:
+            to.deposit(amount)
 
 
 class WithdrawError(Exception):  # 출금 에러
     def __init__(self, account: BankAccount, amount):
-        self.account: BankAccount = account
+        self.account = account
         self.amount = amount.to(account.get_balance().units)
 
     def __str__(self):
@@ -128,7 +129,7 @@ class CurrencyError(Exception):
 
 
 class VendingMachine:  # 자판기 클래스
-    def __init__(self):
+    def __init__(self, card_list):
         item_list = [
             ['글루텐-프리 에너지바', randint(0, 20), randint(5, 20) * 100 * KRW],
             ['글루텐-프리 어니언링', randint(0, 20), randint(5, 20) * 100 * KRW],
@@ -153,11 +154,12 @@ class VendingMachine:  # 자판기 클래스
             500: 200,
             100: 500
         }
+        self.__card_list = card_list
 
     def __str__(self):
         return str(tabulate(
             self.__items.reset_index().rename(columns={'index': 'item'}),
-            headers='keys', tablefmt='rst'))
+            headers='keys', tablefmt='rounded_outline'))
 
     def is_out_of_stock(self, item=None):
         if item is None:
@@ -191,21 +193,42 @@ class VendingMachine:  # 자판기 클래스
                 else:
                     changes.append(f'{currency}원 {quantity}개')
         if 0 < len(changes):
-            print('반환됨: ' + ', '.join(changes))
+            print('\n반환됨: ' + ', '.join(changes))
         else:
-            print('반환할 금액이 없습니다.')
+            print('\n반환할 금액이 없습니다.')
 
     @staticmethod
-    def __print_receipt(payment, shopping_dict, total_price, total_cash=None):
+    def __print_receipt(payment, shopping_df: pd.DataFrame, total_price: int, total_cash: int = None):
+        shopping_df.reset_index(inplace=True)
+        shopping_df.rename(columns={'item': '상품명', 'price': '단가', 'amount': '수량'}, inplace=True)
+        shopping_df.set_index('상품명', inplace=True)
+        shopping_df['금액'] = shopping_df['단가'] * shopping_df['수량']
+        receipt = str(tabulate(shopping_df, headers='keys', tablefmt='rst', showindex=True))
+        width = receipt.find('\n')
         if type(payment) == Card:
-            raise NotImplementedError
+            print(f'\n{"구매 영수증":=^{width - 5}}\n'
+                  f'주문일시: {datetime.now().strftime("%Y-%m-%d %H:%M:%S(%a)")}\n'
+                  f'결제수단: 카드\n'
+                  f'{receipt}\n\n'
+                  f'합    계: {total_price:6,}\n'
+                  f'받을금액: {total_price:6,}\n'
+                  f'받은금액: {total_price:6,}\n'
+                  f'{"=" * width}')
         elif payment == '현금':
-            raise NotImplementedError
+            print(f'\n{"구매 영수증":=^{width - 5}}\n'
+                  f'주문일시: {datetime.now().strftime("%Y-%m-%d %H:%M:%S(%a)")}\n'
+                  f'결제수단: 현금\n'
+                  f'{receipt}\n\n'
+                  f'합    계: {total_price:6,}\n'
+                  f'받을금액: {total_price:6,}\n'
+                  f'받은금액: {total_cash:6,}\n'
+                  f'거스름돈: {total_cash - total_price:6,}\n'
+                  f'{"=" * width}')
         else:
             raise PaymentError(payment)
 
     def buy(self):
-        print(self)
+        print('\n' + str(self))
         if self.is_out_of_stock():
             raise OutOfStockError()
 
@@ -247,15 +270,16 @@ class VendingMachine:  # 자판기 클래스
                                      shopping_dict[shopping_item])
 
         if shopping_dict == {}:
-            print('결제할 상품이 없습니다.')
+            print('\n결제할 상품이 없습니다.')
             return
 
         shopping_df = pd.DataFrame(
             [[item, quantity, quantity * self.__items.at[item, 'price']] for item, quantity in shopping_dict.items()],
             index=shopping_dict.keys(),
             columns=['item', 'quantity', 'price'])
-        print(tabulate(shopping_df, headers='keys', tablefmt='rst', showindex=False))
-        print(f'Total price: {sum(shopping_df["price"]):,}')
+        print('\n↓ 선택한 상품 목록 ↓')
+        print(tabulate(shopping_df, headers='keys', tablefmt='rounded_outline', showindex=False))
+        print(f'합계: {sum(shopping_df["price"]):,}\n')
         print('결제 수단을 입력하세요. (카드 또는 현금): ', end='')
         payment = input().strip()
         if payment == '카드':
@@ -279,10 +303,9 @@ class VendingMachine:  # 자판기 클래스
         }
 
         # 현금 투입 처리
-        print('현금을 투입하세요. 오만원, 오십원, 십원 권은 취급하지 않습니다.\n'
+        print('\n현금을 투입하세요. 오만원, 오십원, 십원 권은 취급하지 않습니다.\n'
               '(ex. 5000원 1장, 500원 2개): ', end='')
         inserted_currency_list = list(map(str.strip, input().strip().split(',')))
-
         for i in range(len(inserted_currency_list)):
             inserted_currency = re.match(r'(\d+)원\s*(\d+)[개장]', inserted_currency_list[i])
 
@@ -299,13 +322,13 @@ class VendingMachine:  # 자판기 클래스
 
         # 취급하지 않는 화폐 처리
         if 0 < inserted_moneybox[50000] or 0 < inserted_moneybox[50] or 0 < inserted_moneybox[10]:
-            print('오만원, 오십원, 십원 권은 취급하지 않습니다. 투입한 모든 현금을 반환합니다.')
+            print('\n오만원, 오십원, 십원 권은 취급하지 않습니다. 투입한 모든 현금을 반환합니다.')
             self.__return_inserted_money(inserted_moneybox)
             return
 
         # 금액 부족 처리
         total_cash = sum([currency * quantity for currency, quantity in inserted_moneybox.items()])
-        print(f'투입된 금액: {total_cash:,} KRW')
+        print(f'\n투입된 금액: {total_cash:,} KRW')
         if total_cash < total_price:
             print('금액이 부족합니다. 투입한 모든 현금을 반환합니다.')
             self.__return_inserted_money(inserted_moneybox)
@@ -313,31 +336,61 @@ class VendingMachine:  # 자판기 클래스
 
         # 정상적으로 현금이 투입되었다면 self.__moneybox 에 투입, 상품 지급, 거스름돈 반환
         self.__insert_money(inserted_moneybox)
-
         for item, quantity in shopping_dict.items():
             self.__items.at[item, 'stock'] -= quantity
-        print('투출구에서 상품을 확인하세요.')
+        print('\n투출구에서 상품을 확인하세요.\n↓ 투출구 ↓')
+        print(tabulate(shopping_dict.items(), headers=['품목', '수량'], tablefmt='rounded_outline', showindex=False))
         self.__return_change(total_cash - total_price)
 
         # 영수증 출력
-        print('영수증을 출력하시겠습니까? (y/n): ', end='')
+        print('\n영수증을 출력하시겠습니까? (y/n): ', end='')
         if input().strip().lower() == 'y':
-            self.__print_receipt('현금', shopping_dict, total_price, total_cash)
+            shopping_df = self.__items.loc[shopping_dict.keys(), ['price']]
+            shopping_df.insert(0, 'amount', shopping_dict.values())
+            self.__print_receipt('현금', shopping_df, total_price, total_cash)
 
     def __buy_with_card(self, shopping_dict, total_price: pint.Quantity):
-        raise NotImplementedError
+        print('\n↓ 사용 가능한 카드 목록 ↓')
+        print(tabulate(zip(map(Card.get_card_number, self.__card_list), map(Card.get_balance, self.__card_list)),
+                       headers=['카드번호', '잔액'], showindex=True, tablefmt='rounded_outline'))
+        print(f'결제할 카드를 선택하세요. (0 ~ {len(self.__card_list) - 1}): ', end='')
+        idx = input()
+        if idx.isdigit() and 0 <= int(idx) < len(self.__card_list):
+            payment_card = self.__card_list[int(idx)]
+            try:
+                payment_card.pay(total_price)
+            except WithdrawError:
+                print('잔액이 부족합니다.')
+            else:
+                for item, quantity in shopping_dict.items():
+                    self.__items.at[item, 'stock'] -= quantity
+                print('\n투출구에서 상품을 확인하세요.\n↓ 투출구 ↓')
+                print(tabulate(shopping_dict.items(), headers=['품목', '수량'], tablefmt='rounded_outline'))
+
+                # 영수증 출력
+                print('\n영수증을 출력하시겠습니까? (y/n): ', end='')
+                if input().strip().lower() == 'y':
+                    shopping_df = self.__items.loc[shopping_dict.keys(), ['price']]
+                    shopping_df.insert(0, 'amount', shopping_dict.values())
+                    self.__print_receipt(payment_card, shopping_df, total_price.magnitude)
+        else:
+            raise ItemError(idx)
 
 
 # 계좌 개설 및 카드 발급
-card1 = Card(BankAccount(Faker('ko-KR').name(), KRW))
-card1.account.deposit(randint(100, 999) * 1000 * KRW)
-card2 = Card(BankAccount(Faker('en-US').name(), USD))
-card2.account.deposit(randint(100, 999) * 1000 * KRW)
-card3 = Card(BankAccount(Faker('zh-CN').name(), CNY))
-card3.account.deposit(randint(100, 999) * 1000 * KRW)
-print(card1, card2, card3, sep='\n\n', end='\n\n')
+cards = []
+for _ in range(2):
+    cards.append(Card(BankAccount(Faker('ko-KR').name(), KRW)))
+    cards[-1].account.deposit(randint(100, 999) * 1000 * KRW)
+    cards.append(Card(BankAccount(Faker('en-US').name(), USD)))
+    cards[-1].account.deposit(randint(100, 999) * 1000 * KRW)
+    cards.append(Card(BankAccount(Faker('zh-CN').name(), CNY)))
+    cards[-1].account.deposit(randint(100, 999) * 1000 * KRW)
+cards.append(Card(BankAccount(Faker('ko-KR').name(), KRW)))
+cards.append(Card(BankAccount(Faker('en-US').name(), USD)))
+cards.append(Card(BankAccount(Faker('zh-CN').name(), CNY)))
 
 # 자판기 인스턴스 생성 및 실행
-vending_machine1 = VendingMachine()
+vending_machine1 = VendingMachine(cards)
 while True:
     vending_machine1.buy()

@@ -101,7 +101,7 @@ class QuantityError(Exception):  # 수량 에러
         return f'invalid quantity requested: {self.quantity}'
 
 
-class OverStockError(Exception):  # 재고 초과 에러
+class OverStockError(Exception):  # 요청 수량 초과 에러
     def __init__(self, item, stock, requested):
         self.item = item
         self.stock = stock  # 현재 재고
@@ -120,12 +120,12 @@ class PaymentError(Exception):
         return f'invalid payment method: {self.payment}'
 
 
-class CurrencyError(Exception):
-    def __init__(self, currency):
-        self.currency = currency
+class DenominationError(Exception):
+    def __init__(self, denomination):
+        self.denomination = denomination
 
     def __str__(self):
-        return f'non-existent currency: {self.currency}원'
+        return f'non-existent denomination: {self.denomination}원'
 
 
 class VendingMachine:  # 자판기 클래스
@@ -149,10 +149,10 @@ class VendingMachine:  # 자판기 클래스
             columns=['item', 'stock', 'price']).set_index('item')
         self.__moneybox = {  # 50000원, 50원, 10원은 취급하지 않음
             10000: 0,
-            5000: 50,
+            5000: 0,
             1000: 100,
             500: 200,
-            100: 500
+            100: 1000
         }
         self.__card_list = card_list
 
@@ -163,35 +163,35 @@ class VendingMachine:  # 자판기 클래스
 
     def is_out_of_stock(self, item=None):
         if item is None:
-            return (self.__items['stock'] == 0).all()
+            return all(self.__items['stock'] == 0)
         return self.__items.at[item, 'stock'] == 0
 
-    def __insert_money(self, inserted_moneybox: dict):
-        for currency, quantity in inserted_moneybox.items():
-            if currency in self.__moneybox:
-                self.__moneybox[currency] += quantity
+    def __insert_money(self, moneybox: dict):
+        for denomination, quantity in moneybox.items():
+            if denomination in self.__moneybox:
+                self.__moneybox[denomination] += quantity
 
     def __return_change(self, change):
         if change == 0:
             return
 
         return_moneybox = {}
-        for currency in self.__moneybox:
-            quantity = min(self.__moneybox[currency], change // currency)
-            return_moneybox.update({currency: quantity})
-            self.__moneybox[currency] -= quantity
-            change -= currency * quantity
-        self.__return_inserted_money(return_moneybox)
+        for denomination in [1000, 500, 100]:
+            quantity = min(self.__moneybox[denomination], change // denomination)
+            return_moneybox.update({denomination: quantity})
+            self.__moneybox[denomination] -= quantity
+            change -= denomination * quantity
+        self.__return_money(return_moneybox)
 
     @staticmethod
-    def __return_inserted_money(return_moneybox: dict):
+    def __return_money(return_moneybox: dict):
         changes = []
-        for currency, quantity in return_moneybox.items():
+        for denomination, quantity in return_moneybox.items():
             if 0 < quantity:
-                if 1000 <= currency:
-                    changes.append(f'{currency}원 {quantity}장')
+                if 1000 <= denomination:
+                    changes.append(f'{denomination}원 {quantity}장')
                 else:
-                    changes.append(f'{currency}원 {quantity}개')
+                    changes.append(f'{denomination}원 {quantity}개')
         if 0 < len(changes):
             print('\n반환됨: ' + ', '.join(changes))
         else:
@@ -240,7 +240,7 @@ class VendingMachine:  # 자판기 클래스
             if item == '':
                 break
 
-            if item.isdigit() and 0 <= int(item) < self.__items.shape[0]:
+            if item.isdigit() and 0 <= int(item) < len(self.__items):
                 shopping_item = self.__items.index[int(item)]
             elif item in self.__items.index:
                 shopping_item = item
@@ -254,8 +254,6 @@ class VendingMachine:  # 자판기 클래스
             quantity = input().strip()
             if quantity.isdigit():
                 quantity = int(quantity)
-                if quantity <= 0:
-                    raise QuantityError(quantity)
             else:
                 raise QuantityError(quantity)
 
@@ -305,33 +303,33 @@ class VendingMachine:  # 자판기 클래스
         # 현금 투입 처리
         print('\n현금을 투입하세요. 오만원, 오십원, 십원 권은 취급하지 않습니다.\n'
               '(ex. 5000원 1장, 500원 2개): ', end='')
-        inserted_currency_list = list(map(str.strip, input().strip().split(',')))
-        for i in range(len(inserted_currency_list)):
-            inserted_currency = re.match(r'(\d+)원\s*(\d+)[개장]', inserted_currency_list[i])
+        inserted_denomination_list = list(map(str.strip, input().strip().split(',')))
+        for i in range(len(inserted_denomination_list)):
+            inserted_denomination = re.match(r'(\d+)원\s*(\d+)[개장]', inserted_denomination_list[i])
 
-            if inserted_currency is None:  # 입력 형식이 틀리면 에러
-                raise SyntaxError(inserted_currency_list[i])
+            if inserted_denomination is None:  # 입력 형식이 틀리면 에러
+                raise SyntaxError(inserted_denomination_list[i])
 
-            currency = int(inserted_currency.group(1))
-            quantity = int(inserted_currency.group(2))
+            denomination = int(inserted_denomination.group(1))
+            quantity = int(inserted_denomination.group(2))
 
-            if currency not in inserted_moneybox:  # 존재하지 않는 화폐 입력시 에러 (ex. 2000원 1장)
-                raise CurrencyError(currency)
+            if denomination not in inserted_moneybox:  # 존재하지 않는 화폐 입력시 에러 (ex. 2000원 1장)
+                raise DenominationError(denomination)
 
-            inserted_moneybox[currency] += quantity
+            inserted_moneybox[denomination] += quantity
 
         # 취급하지 않는 화폐 처리
         if 0 < inserted_moneybox[50000] or 0 < inserted_moneybox[50] or 0 < inserted_moneybox[10]:
             print('\n오만원, 오십원, 십원 권은 취급하지 않습니다. 투입한 모든 현금을 반환합니다.')
-            self.__return_inserted_money(inserted_moneybox)
+            self.__return_money(inserted_moneybox)
             return
 
         # 금액 부족 처리
-        total_cash = sum([currency * quantity for currency, quantity in inserted_moneybox.items()])
+        total_cash = sum([denomination * quantity for denomination, quantity in inserted_moneybox.items()])
         print(f'\n투입된 금액: {total_cash:,} KRW')
         if total_cash < total_price:
             print('금액이 부족합니다. 투입한 모든 현금을 반환합니다.')
-            self.__return_inserted_money(inserted_moneybox)
+            self.__return_money(inserted_moneybox)
             return
 
         # 정상적으로 현금이 투입되었다면 self.__moneybox 에 투입, 상품 지급, 거스름돈 반환
@@ -376,6 +374,156 @@ class VendingMachine:  # 자판기 클래스
         else:
             raise ItemError(idx)
 
+    def admin_login(self):
+        print('\n관리자 로그인\n'
+              '비밀번호를 입력하세요.: ', end='')
+        password = input()  # 비밀번호이므로 .strip() 사용 X
+        if password == 'admin':  # 관리자 비밀번호는 'admin' 으로 설정
+            self.__admin_menu()
+        else:
+            print('\n비밀번호가 일치하지 않습니다.')
+
+    def __admin_menu(self):
+        while True:
+            print('\n1. 새로운 상품 추가\n'
+                  '2. 기존 상품 삭제\n'
+                  '3. 재고 관리\n'
+                  '4. 가격 변경\n'
+                  '5. 현금 수거\n'
+                  '6. 종료\n'
+                  '사용할 기능을 선택하세요 (1 ~ 6): ', end='')
+
+            choice = input().strip()
+
+            if choice == '1':
+                self.__add_new_item()
+            elif choice == '2':
+                self.__remove_item()
+            elif choice == '3':
+                self.__restock_item()
+            elif choice == '4':
+                self.__update_price()
+            elif choice == '5':
+                self.__restock_moneybox()
+            elif choice == '6':
+                break
+            else:
+                print('\n올바른 기능을 입력해주세요.')
+
+    def __add_new_item(self):
+        if 20 <= len(self.__items):
+            print('\n더 이상 상품을 추가할 수 없습니다. 기존 상품 삭제 후 이용해주세요.')
+            return
+
+        print('\n추가할 상품명을 입력하세요.\n'
+              '아무것도 입력하지 않으면 관리자 메뉴로 돌아갑니다.: ', end='')
+        item = input().strip()
+        if item == '':
+            return
+
+        if item in self.__items.index:
+            print('\n이미 존재하는 상품입니다. 동일한 상품을 추가하려는 경우 다른 이름을 사용해주세요.')
+            return
+
+        print('해당 상품의 추가 수량을 입력하세요.\n'
+              '각 상품은 최대 20개까지 투입 가능합니다.: ', end='')
+        quantity = input().strip()
+        if quantity.isdigit() and int(quantity) <= 20:
+            quantity = int(quantity)
+        else:
+            raise QuantityError(quantity)
+
+        print('해당 상품의 판매 가격을 입력하세요. (ex. 2200원): ', end='')
+        input_price = input().strip()
+        price = re.match(r'(\d+)원', input_price)
+
+        if price is None:  # 입력 형식이 틀리면 에러
+            raise SyntaxError(input_price)
+
+        price = int(price.group(1))
+
+        new_df = pd.DataFrame([[item, quantity, price * KRW]], columns=['item', 'stock', 'price']).set_index('item')
+        self.__items = pd.concat([self.__items, new_df])
+        # self.__items.loc[item] = [quantity, price * KRW] 로 변경 가능하나, Pint 라이브러리 관련 경고 문구가 출력됨
+
+        print(f'\n{item} {quantity}개가 추가되었습니다.')
+
+    def __remove_item(self):
+        print('\n' + str(self))
+        print('삭제할 상품의 번호 또는 상품명을 입력하세요.\n'
+              '아무것도 입력하지 않으면 관리자 메뉴로 돌아갑니다.: ', end='')
+        item = input().strip()
+        if item == '':
+            return
+
+        if item.isdigit() and 0 <= int(item) < len(self.__items):
+            item = self.__items.index[int(item)]
+        elif item not in self.__items.index:
+            raise ItemError(item)
+
+        print(f'\n{item} 품목이 삭제되었습니다.')
+        self.__items.drop(index=item, inplace=True)
+
+    def __restock_item(self):
+        print('\n' + str(self))
+        print('재고를 보충할 상품의 번호 또는 상품명을 입력하세요.\n'
+              '아무것도 입력하지 않으면 관리자 메뉴로 돌아갑니다.: ', end='')
+        item = input().strip()
+        if item == '':
+            return
+
+        if item.isdigit() and 0 <= int(item) < len(self.__items):
+            item = self.__items.index[int(item)]
+        elif item not in self.__items.index:
+            raise ItemError(item)
+
+        if self.__items.at[item, 'stock'] == 20:
+            print('\n해당 상품은 보충할 필요가 없습니다.')
+            return
+
+        print(f'선택한 상품의 보충 수량을 입력하세요.\n'
+              f'해당 상품은 최대 {20 - self.__items.at[item, "stock"]}개까지 더 보충 가능합니다.: ', end='')
+        quantity = input().strip()
+        if not quantity.isdigit() or 20 < self.__items.at[item, 'stock'] + int(quantity):
+            raise QuantityError(quantity)
+
+        self.__items.at[item, 'stock'] += int(quantity)
+        print(f'\n{item} {quantity}개가 추가되었습니다.')
+
+    def __update_price(self):
+        print('\n' + str(self))
+        print('가격을 변경할 상품의 번호 또는 상품명을 입력하세요.\n'
+              '아무것도 입력하지 않으면 관리자 메뉴로 돌아갑니다.: ', end='')
+        item = input().strip()
+        if item == '':
+            return
+
+        if item.isdigit() and 0 <= int(item) < len(self.__items):
+            item = self.__items.index[int(item)]
+        elif item not in self.__items.index:
+            raise ItemError(item)
+
+        print(f'{item}의 새로운 가격을 입력하세요. (ex. 2200원): ', end='')
+        input_price = input().strip()
+        price = re.match(r'(\d+)원', input_price)
+
+        if price is None:  # 입력 형식이 틀리면 에러
+            raise SyntaxError(input_price)
+
+        price = int(price.group(1))
+
+        print(f'\n{item}의 가격이 {price}원으로 변경되었습니다.')
+        self.__items.at[item, 'price'] = price * KRW
+
+    def __restock_moneybox(self):
+        return_moneybox = {}
+        for denomination in [10000, 5000]:  # 받기만 가능한 10000원, 5000원은 수거
+            return_moneybox[denomination] = self.__moneybox[denomination]
+            self.__moneybox[denomination] = 0
+        self.__return_money(return_moneybox)
+
+        raise NotImplementedError  # 거스름돈으로 쓰이는 1000원, 500원, 100원은 어떻게 처리?
+
 
 # 계좌 개설 및 카드 발급
 cards = []
@@ -394,3 +542,4 @@ cards.append(Card(BankAccount(Faker('zh-CN').name(), CNY)))
 vending_machine1 = VendingMachine(cards)
 while True:
     vending_machine1.buy()
+    vending_machine1.admin_login()  # ← 테스트용 코드, 사용자 인터페이스 생기면 마우스 클릭 등으로 실행하면 좋을 듯

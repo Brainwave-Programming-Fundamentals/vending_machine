@@ -166,6 +166,12 @@ class VendingMachine:  # 자판기 클래스
             return all(self.__items['stock'] == 0)
         return self.__items.at[item, 'stock'] == 0
 
+    def is_cash_payment_possible(self):
+        for denomination in [1000, 500, 100]:
+            if self.__moneybox[denomination] < 10:
+                return False
+        return True
+
     def __insert_money(self, moneybox: dict):
         for denomination, quantity in moneybox.items():
             if denomination in self.__moneybox:
@@ -193,9 +199,9 @@ class VendingMachine:  # 자판기 클래스
                 else:
                     changes.append(f'{denomination}원 {quantity}개')
         if 0 < len(changes):
-            print('\n반환됨: ' + ', '.join(changes))
+            print('반환됨: ' + ', '.join(changes))
         else:
-            print('\n반환할 금액이 없습니다.')
+            print('반환할 금액이 없습니다.')
 
     @staticmethod
     def __print_receipt(payment, shopping_df: pd.DataFrame, total_price: int, total_cash: int = None):
@@ -231,6 +237,9 @@ class VendingMachine:  # 자판기 클래스
         print('\n' + str(self))
         if self.is_out_of_stock():
             raise OutOfStockError()
+
+        if not self.is_cash_payment_possible():
+            print('※ 현재 카드 결제만 가능합니다. ※')
 
         shopping_dict = {}
         while True:
@@ -277,8 +286,14 @@ class VendingMachine:  # 자판기 클래스
             columns=['item', 'quantity', 'price'])
         print('\n↓ 선택한 상품 목록 ↓')
         print(tabulate(shopping_df, headers='keys', tablefmt='rounded_outline', showindex=False))
-        print(f'합계: {sum(shopping_df["price"]):,}\n')
-        print('결제 수단을 입력하세요. (카드 또는 현금): ', end='')
+        print(f'합계: {sum(shopping_df["price"]):,}')
+
+        if not self.is_cash_payment_possible():
+            print('\n※ 현재 카드 결제만 가능합니다. ※')
+            self.__buy_with_card(shopping_dict, sum(shopping_df['price']))
+            return
+
+        print('\n결제 수단을 입력하세요. (카드 또는 현금): ', end='')
         payment = input().strip()
         if payment == '카드':
             self.__buy_with_card(shopping_dict, sum(shopping_df['price']))
@@ -520,9 +535,17 @@ class VendingMachine:  # 자판기 클래스
         for denomination in [10000, 5000]:  # 받기만 가능한 10000원, 5000원은 수거
             return_moneybox[denomination] = self.__moneybox[denomination]
             self.__moneybox[denomination] = 0
-        self.__return_money(return_moneybox)
 
-        raise NotImplementedError  # 거스름돈으로 쓰이는 1000원, 500원, 100원은 어떻게 처리?
+        for denomination, limit in zip([1000, 500, 100], [100, 200, 1000]):
+            if limit < self.__moneybox[denomination]:
+                return_moneybox[denomination] = self.__moneybox[denomination] - limit
+                self.__moneybox[denomination] = limit
+            else:
+                print(f'{denomination}원 지폐 {limit - self.__moneybox[denomination]}장 보충되었습니다.'
+                      if denomination == 1000 else
+                      f'{denomination}원 동전 {limit - self.__moneybox[denomination]}개 보충되었습니다.')
+                self.__moneybox[denomination] = limit
+        self.__return_money(return_moneybox)
 
 
 # 계좌 개설 및 카드 발급

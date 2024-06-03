@@ -334,8 +334,8 @@ class VendingMachine:  # 자판기 클래스
             inserted_moneybox[denomination] += quantity
 
         # 취급하지 않는 화폐 처리
-        if 0 < inserted_moneybox[50000] or 0 < inserted_moneybox[50] or 0 < inserted_moneybox[10]:
-            print('\n오만원, 오십원, 십원 권은 취급하지 않습니다. 투입한 모든 현금을 반환합니다.')
+        if any([inserted_moneybox[denomination] for denomination in [50000, 500, 100, 50, 10]]):
+            print('\n오만원 권과 동전은 취급하지 않습니다. 투입한 모든 현금을 반환합니다.')
             self.__return_money(inserted_moneybox)
             return
 

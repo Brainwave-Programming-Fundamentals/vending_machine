@@ -255,9 +255,9 @@ class VendingMachine:  # 자판기 클래스
                 shopping_item = item
             else:
                 raise ItemError(item)
-
-            if self.is_out_of_stock(shopping_item):
-                raise OutOfStockError(shopping_item)
+            #
+            # if self.is_out_of_stock(shopping_item):
+            #     raise OutOfStockError(shopping_item)
 
             print('선택한 상품의 구매 수량을 입력하세요.: ', end='')
             quantity = input().strip()
@@ -272,9 +272,15 @@ class VendingMachine:  # 자판기 클래스
                 shopping_dict[shopping_item] = quantity
 
             if self.__items.at[shopping_item, 'stock'] < shopping_dict[shopping_item]:
-                raise OverStockError(shopping_item,
-                                     self.__items.at[shopping_item, 'stock'],
-                                     shopping_dict[shopping_item])
+                print(f'현재 {shopping_item} 품목의 재고는 {self.__items.at[shopping_item, "stock"]}개 입니다. '
+                      f'구매 수량을 다시 확인해 주세요.')
+                shopping_dict[shopping_item] -= quantity
+                if shopping_dict[shopping_item] <= 0:
+                    del shopping_dict[shopping_item]
+
+            print('상품이 담겼습니다.\n↓ 담은 상품 목록 ↓')
+            print(tabulate(pd.DataFrame(shopping_dict.items(), columns=['item', 'quantity']),
+                           headers='keys', tablefmt='rounded_outline', showindex=False))
 
         if shopping_dict == {}:
             print('\n결제할 상품이 없습니다.')
@@ -316,7 +322,7 @@ class VendingMachine:  # 자판기 클래스
         }
 
         # 현금 투입 처리
-        print('\n현금을 투입하세요. 오만원, 오십원, 십원 권은 취급하지 않습니다.\n'
+        print('\n현금을 투입하세요. 오만원 권과, 동전은 취급하지 않습니다.\n'
               '(ex. 5000원 1장, 500원 2개): ', end='')
         inserted_denomination_list = list(map(str.strip, input().strip().split(',')))
         for i in range(len(inserted_denomination_list)):
@@ -565,4 +571,4 @@ cards.append(Card(BankAccount(Faker('zh-CN').name(), CNY)))
 vending_machine1 = VendingMachine(cards)
 while True:
     vending_machine1.buy()
-    vending_machine1.admin_login()  # ← 테스트용 코드, 사용자 인터페이스 생기면 마우스 클릭 등으로 실행하면 좋을 듯
+    # vending_machine1.admin_login()  # ← 테스트용 코드, 사용자 인터페이스 생기면 마우스 클릭 등으로 실행하면 좋을 듯

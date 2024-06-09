@@ -277,10 +277,10 @@ class VendingMachine:  # 자판기 클래스
                 shopping_dict[shopping_item] -= quantity
                 if shopping_dict[shopping_item] <= 0:
                     del shopping_dict[shopping_item]
-
-            print('상품이 담겼습니다.\n↓ 담은 상품 목록 ↓')
-            print(tabulate(pd.DataFrame(shopping_dict.items(), columns=['item', 'quantity']),
-                           headers='keys', tablefmt='rounded_outline', showindex=False))
+            else:
+                print('상품이 담겼습니다.\n↓ 담은 상품 목록 ↓')
+                print(tabulate(pd.DataFrame(shopping_dict.items(), columns=['item', 'quantity']),
+                               headers='keys', tablefmt='rounded_outline', showindex=False))
 
         if shopping_dict == {}:
             print('\n결제할 상품이 없습니다.')
